@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2D Emotions model</title>
+    <style>
+      /* Center the circle in the viewport */
+      body {
+        font-family: monospace;
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+      }
+
+      :root {
+        --circle-radius: 350px;
+        --arrowhead-size: 12px;
+      }
+
+      /* Style for the circle */
+      .circle {
+        width: calc(var(--circle-radius) * 2); /* Default width */
+        height: calc(var(--circle-radius) * 2); /* Default height */
+        border: 2px solid black;
+        border-radius: 50%;
+        position: relative;
+      }
+
+      /* Style for the points */
+      .point {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        position: absolute;
+        cursor: pointer;
+      }
+
+      .point.rated {
+        background-color: green;
+      }
+      .point.unrated {
+        background-color: red;
+      }
+      .point.selected {
+        background-color: blue;
+      }
+
+      .point-emo {
+        background-color: magenta;
+        width: 5px;
+        height: 5px;
+      }
+
+      /* Style for the kitten images */
+      .kitten {
+        max-width: 100px;
+        max-height: 100px;
+        display: none;
+        position: absolute;
+      }
+
+      /* Style for the point labels */
+      .label {
+        position: absolute;
+        top: 0;
+        transform: translate(-50%, -100%);
+        pointer-events: none;
+      }
+
+      /* Style for the X and Y axes */
+      .axis {
+        position: absolute;
+        background: black;
+        z-index: 1; /* Place axes above other elements */
+        pointer-events: none;
+      }
+
+      .axis-x {
+        width: 110%;
+        height: 1px;
+        top: 50%;
+        left: -5%;
+        transform: translateY(4px);
+      }
+
+      .axis-y {
+        width: 1px;
+        height: 110%;
+        top: -5%;
+        left: 50%;
+        transform: translateX(4px);
+      }
+
+      /* Style for axis labels */
+      .axis-label {
+        position: absolute;
+        color: black;
+        pointer-events: none;
+      }
+
+      .x-label {
+        top: 50%;
+        left: 105%;
+        transform: translateY(-50%);
+      }
+
+      .y-label {
+        top: -5%;
+        left: 51%;
+        transform: translateX(-50%);
+      }
+
+      .axis-x::before,
+      .axis-y::before {
+        content: "";
+        position: absolute;
+        width: 0;
+        height: 0;
+        border-style: solid;
+      }
+
+      .axis-x::before {
+        border-width: calc(var(--arrowhead-size) / 2) 0 calc(var(--arrowhead-size) / 2) calc(var(--arrowhead-size));
+        border-color: transparent transparent transparent black;
+        top: 50%;
+        right: -5px; /* Adjust the position for the arrowhead */
+        transform: translateY(calc(-1 * var(--arrowhead-size) / 2));
+      }
+
+      .axis-y::before {
+        border-width: 0 calc(var(--arrowhead-size) / 2) calc(var(--arrowhead-size)) calc(var(--arrowhead-size) / 2);
+        border-color: transparent transparent black transparent;
+        left: 50%;
+        top: -5px; /* Adjust the position for the arrowhead */
+        transform: translateX(calc(-1 * var(--arrowhead-size) / 2));
+      }
+
+      #rating-interface,
+      #selection-interface,
+      #status-interface {
+        background-color: white;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        text-align: center;
+        font-size: 16px;
+        z-index: 2;
+      }
+
+      #selection-interface {
+        margin: 0.5em;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        width: 50%;
+      }
+
+      #selection-interface > a:visited {
+        color: #0000ff;
+      }
+
+      #rating-interface {
+        position: absolute;
+        top: 5em;
+        left: 1em;
+      }
+
+      #rating-interface > img {
+        max-width: 256px;
+        padding-bottom: 1em;
+      }
+
+      .rating-label {
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
+
+      .rating-options {
+        display: flex;
+        justify-content: center;
+      }
+
+      .rating-option {
+        display: inline-block;
+        cursor: pointer;
+        margin: 0 10px;
+        transition: transform 0.2s;
+      }
+
+      .rating-option:hover {
+        transform: scale(1.1);
+      }
+      #top-interface {
+        position: fixed;
+        top: 0.1em;
+        padding: 0.1em;
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+      }
+      #status-interface {
+        margin: 0.5em;
+        min-width: 150px;
+      }
+
+      #submit {
+        min-width: 150px;
+        height: 50px;
+        font-size: 2em;
+        background-color: orange;
+      }
+      .selection-option-disabled {
+        pointer-events: none !important;
+        color: black !important;
+        text-decoration: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="top-interface">
+      <div id="selection-interface">
+        <a href="#" class="selection-option" data-part="0">Part 1</a>
+        <a href="#" class="selection-option" data-part="1">Part 2</a>
+        <a href="#" class="selection-option" data-part="2">Part 3</a>
+        <a href="#" class="selection-option" data-part="3">Part 4</a>
+        <a href="#" class="selection-option" data-part="4">Part 5</a>
+        <span>| Current part: <span id="selection-part">1</span> / 5</span>
+      </div>
+      <button id="submit">Submit</button>
+      <div id="status-interface">Rated: 0 / 0</div>
+    </div>
+
+    <div id="rating-interface">
+      <div class="rating-label"><span id="rating-coordinates">[valence = v, arousal = a]</span>.<br />Do you agree with this number?</div>
+      <img src="" />
+      <div class="rating-options">
+        <button class="rating-option" data-value="1">1</button>
+        <button class="rating-option" data-value="2">2</button>
+        <button class="rating-option" data-value="3">3</button>
+        <button class="rating-option" data-value="4">4</button>
+        <button class="rating-option" data-value="5">5</button>
+      </div>
+    </div>
+
+    <div class="circle" id="circle">
+      <div class="axis axis-x"></div>
+      <div class="axis-label x-label">Valence</div>
+      <div class="axis axis-y"></div>
+      <div class="axis-label y-label">Arousal</div>
+    </div>
+    <script>
+      const fetchPoints = async () => {
+        const response = await fetch("/data/points/2d.json");
+        const data = await response.json();
+        return data;
+      };
+
+      const fetchEmotions = async () => {
+        const response = await fetch("/data/emotions.json");
+        const data = await response.json();
+        return data;
+      };
+      const partition = (x, n) => {
+        const p = x.length % n,
+          q = Math.ceil(x.length / n),
+          r = Math.floor(x.length / n);
+        return [...Array(n)].reduce((a, _, i) => (a[0].push(x.slice(a[1], (a[1] += i < p ? q : r))), a), [[], 0])[0];
+      };
+      const getUserName = () => {
+        const cachedName = localStorage.getItem("userName");
+        if (cachedName) return cachedName;
+        const promptName = prompt("Please enter your name:") || `Unknown User - ${new Date().toISOString()}`;
+        localStorage.setItem("userName", promptName);
+        return promptName;
+      };
+    </script>
+    <script>
+      const ctx = {
+        points: fetchPoints(),
+        emotions: fetchEmotions(),
+        pointElements: [],
+        kittenElements: [],
+        ratings: {},
+        currentPart: 0,
+      };
+
+      const updateStatus = () => {
+        document.getElementById("status-interface").innerHTML = `Rated: ${Object.keys(ctx.ratings).length} / ${ctx.pointElements.length}`;
+      };
+
+      const disableNavigation = () => {
+        setVisible(submit, true);
+        document.querySelectorAll(".selection-option").forEach((o) => o.classList.add("selection-option-disabled"));
+      };
+      const enableNavigation = () => {
+        setVisible(submit, false);
+        document.querySelectorAll(".selection-option").forEach((o) => o.classList.remove("selection-option-disabled"));
+      };
+
+      const resetPoints = () => {
+        enableNavigation();
+        document.getElementById("selection-part").innerHTML = `${0}`;
+        document.querySelectorAll(".selection-option").forEach((o) => (o.style.fontWeight = "normal"));
+
+        setVisible(ratingInterface, false);
+        selectPoint(null);
+        while (ctx.pointElements.length) {
+          const el = ctx.pointElements.pop();
+          el.remove();
+        }
+        while (ctx.kittenElements.length) {
+          const el = ctx.kittenElements.pop();
+          el.remove();
+        }
+        while (Object.keys(ctx.ratings).length) {
+          const k = Object.keys(ctx.ratings).pop();
+          delete ctx.ratings[k];
+        }
+      };
+
+      const getPointPart = async (part) => {
+        ctx.points = await ctx.points;
+        return partition(ctx.points, 5)[part];
+      };
+
+      const setPointPart = (part) => {
+        resetPoints();
+        ctx.currentPart = part;
+        document.getElementById("selection-part").innerHTML = `${part + 1}`;
+        document.querySelectorAll(".selection-option").forEach((o, idx) => (o.style.fontWeight = idx == part ? "bold" : "normal"));
+
+        getPointPart(part).then((ps) => {
+          const { pointElements, kittenElements } = drawPoints(ps);
+          ctx.pointElements = pointElements;
+          ctx.kittenElements = kittenElements;
+          updateStatus();
+        });
+        updateStatus();
+      };
+
+      document.getElementById("submit").addEventListener("click", async (e) => {
+        const formData = {
+          user: getUserName(),
+          model_type: "2d",
+          ratings: Object.keys(ctx.ratings).map((x) => ({
+            id: parseInt(x),
+            rating: ctx.ratings[x],
+          })),
+        };
+        console.log("Submitting", formData);
+        const resp = await fetch("/rate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        const body = await resp.json();
+        console.log(body);
+        alert("Ratings submitted successfully");
+
+        resetPoints();
+      });
+
+      const selectionInterface = document.getElementById("selection-interface");
+      const selectionOptions = selectionInterface.querySelectorAll("a");
+      selectionOptions.forEach((o) => {
+        o.addEventListener("click", (event) => {
+          const part = parseInt(event.currentTarget.getAttribute("data-part"));
+          setPointPart(part);
+        });
+      });
+
+      const circle = document.getElementById("circle");
+      const insertEl = (type, className, pos = null, props = {}, data = {}) => {
+        const el = document.createElement(type);
+        el.className = className;
+        if (pos) {
+          el.style.left = pos.left;
+          el.style.top = pos.top;
+        }
+        Object.keys(props).map((k) => (el[k] = props[k]));
+        Object.keys(data).map((k) => (el.dataset[k] = data[k]));
+        circle.appendChild(el);
+        return el;
+      };
+      const setVisible = (el, visible) => (el.style.display = visible ? "block" : "none");
+
+      let selectedPointId = null;
+
+      const ratingInterface = document.getElementById("rating-interface");
+      const ratingImage = ratingInterface.querySelector("img");
+      const ratingCoordinates = ratingInterface.querySelector("#rating-coordinates");
+      setVisible(ratingInterface, false);
+      const ratingOptions = ratingInterface.querySelectorAll(".rating-option");
+      ratingOptions.forEach((option) => {
+        option.addEventListener("click", (event) => {
+          const selectedRating = parseInt(event.currentTarget.getAttribute("data-value"));
+          setRating(selectedPointId, selectedRating);
+          selectPoint(null);
+          setVisible(ratingInterface, false);
+        });
+      });
+
+      const getRelativeCoords = ({ x, y }) => ({
+        x: `calc((var(--circle-radius) * ${x + 1}))`,
+        y: `calc((var(--circle-radius) * ${1 - y}))`,
+      });
+
+      const drawPoints = (ps) => {
+        const pointElements = [];
+        const kittenElements = [];
+        ps.forEach((data, index) => {
+          const { x, y } = getRelativeCoords(data);
+
+          const point = insertEl("div", `point unrated`, { left: x, top: y }, {}, { id: data.id });
+          point.userData = data;
+          point.addEventListener("click", () => {
+            selectPoint(data.id);
+          });
+
+          const kitten = insertEl("img", "kitten", { left: `calc(${x} + 20px)`, top: `calc(${y} - 20px)` }, { src: data.image });
+          point.addEventListener("mouseover", () => {
+            setVisible(kitten, true);
+          });
+          point.addEventListener("mouseout", () => {
+            setVisible(kitten, false);
+          });
+
+          pointElements.push(point);
+          kittenElements.push(kitten);
+        });
+        return { pointElements, kittenElements };
+      };
+
+      setPointPart(0);
+
+      ctx.emotions.then((es) => {
+        ctx.emotionArray = es;
+        es.forEach((coord) => {
+          const { x, y } = getRelativeCoords(coord);
+
+          insertEl("div", `point point-emo`, { left: x, top: y });
+          insertEl("div", `label`, { left: x, top: `calc(${y} + 15px)` }, { textContent: coord.label });
+        });
+      });
+
+      const getPoint = (id) => document.querySelector(`[data-id='${id}']`);
+
+      // Function to update a point's rating
+      function setRating(id, rating) {
+        ctx.ratings[id] = rating;
+        disableNavigation();
+        updateStatus();
+        const point = getPoint(id);
+        point.classList.remove("unrated");
+        point.classList.add("rated");
+      }
+
+      const nearestEmotion = (target, points) =>
+        points
+          .map((point) => ({
+            point,
+            distance: Math.hypot(target.x - point.x, target.y - point.y),
+          }))
+          .sort((a, b) => a.distance - b.distance)
+          //.slice(1, 3)
+          .map((item) => item);
+
+      function selectPoint(id) {
+        const prevPoint = selectedPointId ? getPoint(selectedPointId) : null;
+        if (prevPoint) {
+          prevPoint.classList.remove("selected");
+        }
+
+        selectedPointId = id;
+
+        if (selectedPointId === null) return;
+
+        setVisible(ratingInterface, true);
+
+        const curPoint = getPoint(id);
+        if (curPoint) {
+          const pt = curPoint.userData;
+          const nearest = nearestEmotion(pt, ctx.emotionArray);
+          console.log(JSON.stringify(nearest));
+          const emotion = nearest[0].point.label;
+          ratingImage.src = pt.image;
+          ratingCoordinates.innerHTML = `[valence = ${pt.x.toPrecision(4)}, arousal = ${pt.y.toPrecision(4)}]<br/>Nearest emotion: ${emotion}`;
+          curPoint.classList.add("selected");
+        }
+      }
+    </script>
+  </body>
+</html>

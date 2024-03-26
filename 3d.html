@@ -1,0 +1,706 @@
+<html>
+  <title>3D Emotions Model</title>
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      color: black;
+      font-family: monospace;
+      display: flex;
+      justify-content: center;
+    }
+    #c {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .lil-gui {
+      display: none !important;
+    }
+    #ui {
+      display: none;
+      position: absolute;
+      right: 1em;
+      top: 1em;
+      background: rgba(64, 64, 64, 0.8);
+      padding: 0.5em;
+    }
+    #ui .axisgrid {
+      display: flex;
+      align-items: center;
+    }
+    #ui .axisgrid:nth-child(odd) {
+      background: rgba(72, 72, 72, 0.8);
+    }
+    #ui .label {
+      width: 8em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #ui .checkbox {
+      display: flex;
+      align-items: center;
+    }
+
+    #rating-interface,
+    #selection-interface,
+    #status-interface {
+      background-color: white;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      padding: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      font-size: 16px;
+      z-index: 2;
+    }
+
+    #selection-interface {
+      margin: 0.5em;
+      display: flex;
+      flex-direction: row;
+      justify-content: space-around;
+      width: 50%;
+    }
+
+    #selection-interface > a:visited {
+      color: #0000ff;
+    }
+
+    #rating-interface {
+      position: absolute;
+      top: 5em;
+      left: 1em;
+    }
+
+    #rating-interface > img {
+      max-height: 256px;
+      padding-bottom: 1em;
+    }
+
+    #submit {
+      min-width: 150px;
+      height: 50px;
+      font-size: 2em;
+      background-color: orange;
+    }
+
+    .rating-label {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    #ccc{width: 840px; height: 840px;border: 10px solid red;}
+
+    .rating-options {
+      display: flex;
+      justify-content: center;
+    }
+
+    .rating-option {
+      display: inline-block;
+      cursor: pointer;
+      margin: 0 10px;
+      transition: transform 0.2s;
+    }
+
+    .selection-option-disabled {
+      pointer-events: none !important;
+      color: black !important;
+      text-decoration: none !important;
+    }
+
+    .rating-option:hover {
+      transform: scale(1.1);
+    }
+    #top-interface {
+      position: fixed;
+      top: 0.1em;
+      padding: 0.1em;
+      width: 100%;
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+    }
+    #status-interface {
+      margin: 0.5em;
+      min-width: 150px;
+    }
+  </style>
+  <div id="top-interface">
+    <div id="selection-interface">
+      <a href="#" class="selection-option" data-part="0">Part 1</a>
+      <a href="#" class="selection-option" data-part="1">Part 2</a>
+      <a href="#" class="selection-option" data-part="2">Part 3</a>
+      <a href="#" class="selection-option" data-part="3">Part 4</a>
+      <a href="#" class="selection-option" data-part="4">Part 5</a>
+      <span>| Current part: <span id="selection-part">1</span> / 5</span>
+    </div>
+    <button id="submit">Submit</button>
+    <div id="status-interface">Rated: 0 / 0</div>
+  </div>
+  <div id="rating-interface" style="display: none">
+    <div class="rating-label"><span id="rating-coordinates">[valence = v, arousal = a, z=z]</span>.<br />Do you agree with this number?</div>
+    <img src="" />
+    <div class="rating-options">
+      <button class="rating-option" data-value="1">1</button>
+      <button class="rating-option" data-value="2">2</button>
+      <button class="rating-option" data-value="3">3</button>
+      <button class="rating-option" data-value="4">4</button>
+      <button class="rating-option" data-value="5">5</button>
+    </div>
+  </div>
+
+  <canvas id="c"></canvas>
+  <div id="ui"></div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.js",
+        "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/",
+        "three-spritetext": "https://unpkg.com/three-spritetext@1.8.1/dist/three-spritetext.mjs"
+      }
+    }
+  </script>
+  <script>
+    const fetchPoints = async () => {
+      const response = await fetch("/data/points/3d.json");
+      const data = await response.json();
+      return data;
+    };
+
+    const fetchEmotions = async () => {
+      const response = await fetch("/data/emotions.json");
+      const data = await response.json();
+      return data;
+    };
+
+    const getUserName = () => {
+      const cachedName = localStorage.getItem("userName");
+      if (cachedName) return cachedName;
+      const promptName = prompt("Please enter your name:") || `Unknown User - ${new Date().toISOString()}`;
+      localStorage.setItem("userName", promptName);
+      return promptName;
+    };
+
+    const ctx = {};
+    const setVisible = (el, visible) => (el.style.display = visible ? "block" : "none");
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { GUI } from "lil-gui";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import SpriteText from "three-spritetext";
+
+    const updateStatus = () => {
+      document.getElementById("status-interface").innerHTML = `Rated: ${Object.keys(ctx.ratings).length} / ${ctx.pointMeshes.length}`;
+    };
+
+    document.getElementById("submit").addEventListener("click", async (e) => {
+      const formData = {
+        user: getUserName(),
+        model_type: "3d",
+        ratings: Object.keys(ctx.ratings).map((x) => ({
+          id: parseInt(x),
+          rating: ctx.ratings[x],
+        })),
+      };
+      console.log("Submitting", formData);
+      const resp = await fetch("/rate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      const body = await resp.json();
+      console.log(body);
+      alert("Ratings submitted successfully");
+
+      resetPoints();
+    });
+
+    const processedMaterial = new THREE.MeshPhongMaterial({
+      color: 0x00ff00,
+    });
+
+    const disableNavigation = () => {
+      setVisible(submit, true);
+      document.querySelectorAll(".selection-option").forEach((o) => o.classList.add("selection-option-disabled"));
+    };
+    const enableNavigation = () => {
+      setVisible(submit, false);
+      document.querySelectorAll(".selection-option").forEach((o) => o.classList.remove("selection-option-disabled"));
+    };
+
+    const resetPoints = () => {
+      document.getElementById("selection-part").innerHTML = `${0}`;
+      enableNavigation();
+      document.querySelectorAll(".selection-option").forEach((o) => (o.style.fontWeight = "normal"));
+      for (const key in ctx.ratings) {
+        delete ctx.ratings[key];
+      }
+      PickHelper.pickedObject = null;
+      setVisible(ctx.ratingInterface, false);
+      while (ctx.pointMeshes.length) {
+        const mesh = ctx.pointMeshes.pop();
+        ctx.scene.remove(mesh);
+        mesh.remove();
+      }
+      ctx.textureSprite.visible = false;
+      updateStatus();
+    };
+    const getPointPart = async (part) => {
+      ctx.points = await ctx.points;
+      return partition(ctx.points, 5)[part];
+    };
+
+    const setPointPart = (part) => {
+      if (Object.keys(ctx.ratings).length > 0) {
+        const proceed = confirm(
+          "YOU WILL LOSE YOUR CURRENT PROGRESS! ><' \nPlease submit the results first before going to the next part. Click Yes if you want to go to the next part and lose current ratings.\nIf you want to save your work, please click Cancel and then Submit this part.",
+        );
+      }
+      resetPoints();
+      ctx.currentPart = part;
+      document.getElementById("selection-part").innerHTML = `${part + 1}`;
+      document.querySelectorAll(".selection-option").forEach((o, idx) => (o.style.fontWeight = idx == part ? "bold" : "normal"));
+
+      getPointPart(part).then((ps) => {
+        ctx.pointMeshes = drawPoints(ctx.scene, ps);
+        updateStatus();
+      });
+      updateStatus();
+    };
+
+    const setupNavigation = () => {
+      const selectionInterface = document.getElementById("selection-interface");
+      const selectionOptions = selectionInterface.querySelectorAll("a");
+      selectionOptions.forEach((o) => {
+        o.addEventListener("click", (event) => {
+          const part = parseInt(event.currentTarget.getAttribute("data-part"));
+          setPointPart(part);
+        });
+      });
+    };
+
+    const setupRatings = () => {
+      ctx.ratings = {};
+      const ratingInterface = document.getElementById("rating-interface");
+      const ratingOptions = ratingInterface.querySelectorAll(".rating-option");
+      ratingOptions.forEach((option) => {
+        option.addEventListener("click", (event) => {
+          disableNavigation();
+          const selectedRating = parseInt(event.currentTarget.getAttribute("data-value"));
+          ctx.evaluatedPoint.material = processedMaterial;
+          ctx.ratings[ctx.evaluatedPoint.userData.id] = selectedRating;
+          setVisible(ratingInterface, false);
+          ctx.evaluatedPoint = null;
+          updateStatus();
+        });
+      });
+      ctx.ratingInterface = ratingInterface;
+      setVisible(ratingInterface, false);
+    };
+
+    const pickedMaterial = new THREE.MeshPhongMaterial({ emissive: 0xffff00 });
+    class PickHelper {
+      constructor() {
+        this.raycaster = new THREE.Raycaster();
+        this.pickedObject = null;
+        this.savedMaterial = null;
+      }
+      pick(normalizedPosition, models, camera, time) {
+        // restore the color if there is a picked object
+        if (this.pickedObject) {
+          this.pickedObject.material = this.savedMaterial;
+          this.pickedObject = undefined;
+        }
+
+        // cast a ray through the frustum
+        this.raycaster.setFromCamera(normalizedPosition, camera);
+        // get the list of objects the ray intersected
+        const intersectedObjects = this.raycaster.intersectObjects(models);
+        if (intersectedObjects.length) {
+          // pick the first object. It's the closest one
+          this.pickedObject = intersectedObjects[0].object;
+          // save its color
+          this.savedMaterial = this.pickedObject.material;
+          this.pickedObject.material = pickedMaterial;
+          // set its emissive color to flashing red/yellow
+          pickedMaterial.emissive.setHex((time * 8) % 2 > 1 ? 0xffff00 : 0xff0000);
+          return this.pickedObject;
+        }
+        return null;
+      }
+    }
+
+    const setupPicker = (canvas) => {
+      const pickPosition = { x: 0, y: 0 };
+      const pickHelper = new PickHelper();
+
+      function getCanvasRelativePosition(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: ((event.clientX - rect.left) * canvas.width) / rect.width,
+          y: ((event.clientY - rect.top) * canvas.height) / rect.height,
+        };
+      }
+
+      function setPickPosition(event) {
+        const pos = getCanvasRelativePosition(event);
+        pickPosition.x = (pos.x / canvas.width) * 2 - 1;
+        pickPosition.y = (pos.y / canvas.height) * -2 + 1; // note we flip Y
+      }
+
+      function clearPickPosition() {
+        pickPosition.x = -100000;
+        pickPosition.y = -100000;
+      }
+      clearPickPosition();
+
+      window.addEventListener("mousemove", setPickPosition);
+      window.addEventListener("mouseout", clearPickPosition);
+      window.addEventListener("mouseleave", clearPickPosition);
+
+      window.addEventListener(
+        "touchstart",
+        (event) => {
+          // prevent the window from scrolling
+          event.preventDefault();
+          setPickPosition(event.touches[0]);
+        },
+        { passive: false },
+      );
+
+      window.addEventListener("touchmove", (event) => {
+        setPickPosition(event.touches[0]);
+      });
+
+      window.addEventListener("touchend", clearPickPosition);
+
+      return { pickPosition, pickHelper };
+    };
+
+    const genSphere = (subdiv = 100) => {
+      const radius = 1;
+      const widthSegments = subdiv;
+      const heightSegments = subdiv;
+      const sphereGeometry = new THREE.SphereGeometry(radius, widthSegments, heightSegments);
+      return sphereGeometry;
+    };
+
+    const setupCamera = () => {
+      const fov = 40;
+      const aspect = 2; // the canvas default
+      const near = 0.1;
+      const far = 1000;
+      const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+      camera.position.set(0, 5, 0);
+      camera.up.set(0, 0, 1);
+      camera.lookAt(0, 0, 0);
+      return camera;
+    };
+
+    const initViewport = () => {
+      const canvas = document.querySelector("#c");
+      const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, preserveDrawingBuffer: true });
+      ctx.renderer = renderer;
+      const gui = new GUI();
+
+      const camera = setupCamera();
+      ctx.camera = camera;
+      ctx.THREE = THREE;
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.maxTargetRadius = 5;
+      controls.cursor = new THREE.Vector3();
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xffffff);
+      const light = new THREE.AmbientLight(0xffffff, 2); // soft white light
+      scene.add(light);
+
+      const cameraParameters = {
+        fov: camera.fov,
+        near: camera.near,
+        far: camera.far,
+        position: camera.position,
+        rotation: camera.rotation,
+      };
+
+      const cameraFolder = gui.addFolder("Camera");
+      const cameraProp = (name, min, max) =>
+        cameraFolder
+          .add(cameraParameters, name, min, max)
+          .onChange(() => {
+            camera[name] = cameraParameters[name];
+            camera.updateProjectionMatrix();
+          })
+          .listen();
+      cameraProp("fov", 1, 180);
+      cameraProp("near", 0.1, 50);
+      cameraProp("far", 50, 1000);
+      cameraFolder.open();
+
+      const vectorFolder = (label, src, dst) => {
+        const folder = gui.addFolder(label);
+        for (const i of ["x", "y", "z"]) {
+          folder
+            .add(dst, i, -10, 10)
+            .onChange(() => {
+              src[i] = dst[i];
+              camera.updateProjectionMatrix();
+            })
+            .listen();
+        }
+      };
+      vectorFolder("Camera position", camera.position, cameraParameters.position);
+      vectorFolder("Camera rotation", camera.rotation, cameraParameters.rotation);
+
+      controls.addEventListener("change", () => {
+        for (const k of ["fov", "near", "far", "position", "rotation"]) {
+          cameraParameters[k] = camera[k];
+        }
+      });
+
+      return { canvas, renderer, gui, camera, controls, scene };
+    };
+
+    const checkResize = (renderer) => {
+      const canvas = renderer.domElement;
+      const pixelRatio = window.devicePixelRatio;
+      const width = (canvas.clientWidth * pixelRatio) | 0;
+      const height = (canvas.clientHeight * pixelRatio) | 0;
+      const needResize = canvas.width !== width || canvas.height !== height;
+      if (needResize) {
+        renderer.setSize(width, height, false);
+      }
+      return needResize;
+    };
+
+    const drawCoordinateSystem = (scene) => {
+      const sphereGeometry = genSphere(500);
+      const sphereMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.1,
+        depthWrite: false,
+      });
+
+      const sunMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      sunMesh.scale.set(1, 1, 1);
+
+      const disc = new THREE.CircleGeometry(1, 32);
+      const discMaterial = new THREE.MeshPhongMaterial({
+        color: 0x0000ff,
+        opacity: 0.15,
+        transparent: true,
+        depthWrite: false,
+      });
+      const circle = new THREE.Mesh(disc, discMaterial);
+      scene.add(circle);
+      const circle2 = new THREE.Mesh(disc, discMaterial);
+      circle2.scale.set(-1, -1, -1);
+      scene.add(circle2);
+
+      scene.add(sunMesh);
+    };
+
+    const pointGeometry = genSphere(25);
+    const pointMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+
+    const textureLoader = new THREE.TextureLoader();
+
+    const drawPoints = (scene, ps) => {
+      const pointMeshes = [];
+      ps.forEach((p) => {
+        const pointMesh = new THREE.Mesh(pointGeometry, pointMaterial);
+        pointMesh.userData = p;
+        pointMesh.scale.set(0.03, 0.03, 0.03);
+        pointMesh.position.set(p.x, p.y, p.z);
+        pointMeshes.push(pointMesh);
+        scene.add(pointMesh);
+      });
+      return pointMeshes;
+    };
+
+    const emotionMaterial = new THREE.MeshPhongMaterial({ color: "fuchsia" });
+    const drawEmotions = (scene, es) => {
+      es.forEach((e) => {
+        const node = new THREE.Object3D();
+        node.position.set(e.x, e.y, e.z);
+
+        const isBasic = !e.label.includes(" ");
+        const scale = isBasic ? 0.03 : 0.02;
+        const eColor = isBasic ? "blue" : "black";
+
+        //const sprite = labelSprite(e.label);
+        const sprite = new SpriteText(e.label, 10, 0x000000);
+        sprite.color = eColor;
+	const yPos = (e.label == "Anger" || e.label == "Disgust") ? -0.15 : 0.1;
+        sprite.position.set(0, 0, yPos);
+        let scaleMul = isBasic ? 1 : 0.7;
+        sprite.scale.set(scaleMul * e.label.length * 0.05, scaleMul * 0.1, scaleMul * 0.1);
+        node.add(sprite);
+
+        const pointMesh = new THREE.Mesh(pointGeometry, emotionMaterial);
+        pointMesh.scale.set(scale, scale, scale);
+        node.add(pointMesh);
+
+        scene.add(node);
+        if (isBasic) {
+          const dir = new THREE.Vector3(e.x, e.y, e.z);
+          dir.normalize();
+          const origin = new THREE.Vector3(0, 0, 0);
+          const length = 1;
+          const hex = 0xffff00;
+
+          const arrowHelper = new THREE.ArrowHelper(dir, origin, length, hex);
+          scene.add(arrowHelper);
+        }
+      });
+    };
+
+    const getData = () => ({
+      points: fetchPoints(),
+      emotions: fetchEmotions(),
+    });
+
+    const partition = (x, n) => {
+      const p = x.length % n,
+        q = Math.ceil(x.length / n),
+        r = Math.floor(x.length / n);
+      return [...Array(n)].reduce((a, _, i) => (a[0].push(x.slice(a[1], (a[1] += i < p ? q : r))), a), [[], 0])[0];
+    };
+
+    const nearestEmotion = (target) =>
+      ctx.emotionArray
+        .map((point) => ({
+          point,
+          distance: Math.sqrt(Math.pow(target.x - point.x, 2) + Math.pow(target.y - point.y, 2) + Math.pow(target.z - point.z, 2)),
+        }))
+        .sort((a, b) => a.distance - b.distance)
+        .slice(1, 3)
+        .map((item) => item.point.label)[0];
+
+    const main = () => {
+      setupNavigation();
+      setupRatings();
+      const { points, emotions } = getData();
+      ctx.points = points;
+
+      const { canvas, renderer, gui, camera, controls, scene } = initViewport();
+      ctx.scene = scene;
+
+      drawCoordinateSystem(scene);
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      const { pickPosition, pickHelper } = setupPicker(canvas);
+
+      const textureSprite = new THREE.Sprite();
+      ctx.textureSprite = textureSprite;
+      textureSprite.scale.set(0.5, 0.5, 1);
+
+      let currentPick = null;
+      const updatePick = (pick) => {
+        textureSprite.visible = false;
+        if (pick === null) {
+          return;
+        }
+        const p = pick.userData;
+
+        const texture = textureLoader.load(p.image, (tex) => {
+          const spriteMaterial = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: false,
+          });
+          textureSprite.material = spriteMaterial;
+          textureSprite.position.set(p.x, p.y, p.z);
+          textureSprite.visible = true;
+        });
+      };
+      textureSprite.visible = false;
+      scene.add(textureSprite);
+
+      ctx.pointMeshes = [];
+      //setPointPart(0);
+      emotions.then((es) => {
+        ctx.emotionArray = es;
+        drawEmotions(scene, es);
+      });
+
+      canvas.addEventListener("click", () => {
+        if (currentPick) {
+          ctx.evaluatedPoint = currentPick;
+          setVisible(ctx.ratingInterface, true);
+          const { x, y, z } = currentPick.userData;
+          const nearest = nearestEmotion(currentPick.userData);
+          ctx.ratingInterface.querySelector("#rating-coordinates").innerHTML = `[valence = ${x.toPrecision(4)}, arousal = ${y.toPrecision(
+            4,
+          )}, z = ${z.toPrecision(4)}]<br />Nearest emotion: ${nearest}`;
+          ctx.ratingInterface.querySelector("img").src = currentPick.userData.image;
+        }
+      });
+
+      const axes = ["Valence+", "Arousal+", "Z+"];
+      axes.map((ax, idx) => {
+        const sprite = new SpriteText(ax, 10, 0x000000);
+        sprite.color = "red";
+        const coord = [0, 0, 0];
+        coord[idx] = 1.2;
+        sprite.position.set(...coord);
+        sprite.scale.set(ax.length * 0.04, 0.1, 0.1);
+        scene.add(sprite);
+      });
+
+      const size = 2;
+      const divisions = 10;
+
+      var radius = 1;
+      var latSegments = 18; // 10° increments
+      var longSegments = 36; // 10° increments
+
+      var geometry = new THREE.SphereGeometry(radius, longSegments, latSegments);
+      var material = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.1,
+        depthWrite: false,
+      });
+
+      var sphere = new THREE.Mesh(geometry, material);
+      scene.add(sphere);
+      const axesHelper = new THREE.AxesHelper(1.2);
+      scene.add(axesHelper);
+
+      const render = (t) => {
+        t *= 0.001;
+        if (checkResize(renderer)) {
+          const canvas = renderer.domElement;
+          camera.aspect = canvas.clientWidth / canvas.clientHeight;
+          camera.updateProjectionMatrix();
+          controls.update();
+        }
+
+        if (ctx.pointMeshes) {
+          const newPick = pickHelper.pick(pickPosition, ctx.pointMeshes, camera, t);
+          if (newPick !== currentPick) {
+            currentPick = newPick;
+            updatePick(newPick);
+          }
+        }
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(render);
+      };
+
+      requestAnimationFrame(render);
+    };
+
+    main();
+  </script>
+</html>
